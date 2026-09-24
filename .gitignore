@@ -9,5 +9,6 @@ local.properties
 *.log
 
 # preview artifacts
+!docs/screenshots/*.png
 *.png
 *.mp4
