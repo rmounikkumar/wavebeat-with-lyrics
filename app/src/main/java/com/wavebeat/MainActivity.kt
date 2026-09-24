@@ -730,6 +730,7 @@ applySelectedTab()
             if (text == null || lrcLines == null) {
                 text = null
                 lrcLines = emptyList()
+                var source = "none"
 
                 // 1. Prefer a synchronized .lrc file saved next to the song
                 val lrcUri = LyricsFileHelper.findLrcUri(song.uri, contentResolver)
@@ -739,6 +740,7 @@ applySelectedTab()
                     if (parsed.isNotEmpty()) {
                         lrcLines = parsed
                         text = LrcParser.toPlainText(parsed)
+                        source = "lrc_file"
                     }
                 }
 
@@ -749,8 +751,24 @@ applySelectedTab()
                         text = id3Text
                         val parsed = LrcParser.parse(id3Text)
                         if (parsed.isNotEmpty()) lrcLines = parsed
+                        source = "id3"
                     }
                 }
+
+                // 3. Last fallback: fetch synchronized lyrics from LRCLIB (online).
+                //    Only reached when there is no sibling .lrc file and no
+                //    embedded lyrics — existing behavior is otherwise untouched.
+                if (text == null) {
+                    val onlineLrc = LyricsFetcher.resolveSongLyrics(song.title, song.artist, song.duration)
+                    if (!onlineLrc.isNullOrBlank()) {
+                        text = onlineLrc
+                        val parsed = LrcParser.parse(onlineLrc)
+                        if (parsed.isNotEmpty()) lrcLines = parsed
+                        source = "online"
+                    }
+                }
+
+                android.util.Log.d("WaveBeatLyrics", "lyrics for '${song.title}' -> $source")
 
                 val cachedText = text
                 if (cachedText != null) lyricsCache[song.id] = cachedText
