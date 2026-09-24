@@ -4,9 +4,16 @@ A lightweight, offline-first Android music player built with Kotlin and Media3 (
 
 ## Screenshots
 
-| Home | Songs | Player overlay | Audio | Settings | Lyrics |
-|:---:|:---:|:---:|:---:|:---:|:---:|
-| ![Home](docs/screenshots/home_dance.png) | ![Songs](docs/screenshots/library_songs.png) | ![Player overlay](docs/screenshots/player_overlay.png) | ![Audio](docs/screenshots/audio.png) | ![Settings](docs/screenshots/settings.png) | <img src="docs/screenshots/lyrics_1.jpeg" alt="Synced lyrics 1" width="170"/> <img src="docs/screenshots/lyrics_2.jpeg" alt="Synced lyrics 2" width="170"/> |
+| Home | Songs | Player overlay | Audio | Settings |
+|:---:|:---:|:---:|:---:|:---:|
+| ![Home](docs/screenshots/home_dance.png) | ![Songs](docs/screenshots/library_songs.png) | ![Player overlay](docs/screenshots/player_overlay.png) | ![Audio](docs/screenshots/audio.png) | ![Settings](docs/screenshots/settings.png) |
+
+**Synced lyrics:**
+
+<div align="center">
+  <img src="docs/screenshots/lyrics_1.jpeg" alt="Synced lyrics" width="400"/>
+  <img src="docs/screenshots/lyrics_2.jpeg" alt="Synced lyrics" width="400"/>
+</div>
 
 ## Features
 
