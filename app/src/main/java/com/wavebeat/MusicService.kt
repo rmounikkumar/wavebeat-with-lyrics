@@ -665,7 +665,7 @@ class MusicService : MediaSessionService() {
             .setContentTitle(title)
             .setContentText(subtitle)
             .setContentIntent(pendingIntent)
-            .setOngoing(isPlaying)
+            .setOngoing((player?.mediaItemCount ?: 0) > 0)
             .setShowWhen(false)
             .setOnlyAlertOnce(true)
             .setVisibility(NotificationCompat.VISIBILITY_PUBLIC)
@@ -774,6 +774,13 @@ class MusicService : MediaSessionService() {
 
     override fun onGetSession(controllerInfo: MediaSession.ControllerInfo): MediaSession? {
         return mediaSession
+    }
+
+    override fun onUpdateNotification(session: MediaSession, startInForegroundRequired: Boolean) {
+        // Keep the service in the foreground while a playlist is loaded (even when paused),
+        // so the media notification/card stays visible in the shade instead of disappearing
+        // when playback is paused.
+        super.onUpdateNotification(session, startInForegroundRequired || (player?.mediaItemCount ?: 0) > 0)
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {

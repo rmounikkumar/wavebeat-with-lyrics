@@ -44,6 +44,7 @@ Grab the latest APK from the [Releases](https://github.com/rmounikkumar/wavebeat
 
 ## Changelog
 
+- **v1.0.2** — Fix: the media notification / shade card no longer disappears when you pause playback (paused with Bluetooth connected, the card now stays put and play resumes it smoothly). The service stays a foreground media service while a playlist is loaded, so the controls remain visible in the notification shade whether playing or paused.
 - **v1.0.1** — Fix: 8D / 3D / Bass / Reverb / Loudness effect settings now persist across restarts (previously they silently reset to OFF every launch). Rotational 8D pan and widened 3D soundstage verified with stereo output.
 - **v1.0.0** — Synced `.lrc` lyrics with a junk-safe sidecar picker, embedded fallback, plus the full player experience.
 
