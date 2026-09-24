@@ -19,7 +19,7 @@ import java.net.URLEncoder
  */
 object LyricsFetcher {
 
-    private const val USER_AGENT = "WaveBeat/1.0.6 (Android music player; personal use)"
+    private const val USER_AGENT = "WaveBeat/1.0.7 (Android music player; personal use)"
     private const val TIMEOUT_MS = 8000
 
     /**
@@ -36,7 +36,11 @@ object LyricsFetcher {
     }
 
     /**
-     * Returns synced LRC text for the given song, or null when unavailable.
+     * Returns lyrics for the given song, or null when unavailable.
+     *
+     * Synced (timed) lyrics are preferred. When LRCLIB only stores plain,
+     * untimed lyrics for the best-matching record, those are returned instead
+     * (the app shows them as static text) so the song still gets lyrics.
      *
      * @param title      song title from the media store (may contain download junk)
      * @param artist     song artist (may be "<unknown>" or blank)
@@ -47,6 +51,10 @@ object LyricsFetcher {
             val cleanTitle = cleanQuery(title)
             val cleanArtist = cleanQuery(artist)
                 .takeUnless { it.isBlank() || it.equals("<unknown>", ignoreCase = true) }
+                // YouTube auto-generated channels are named "Artist - Topic";
+                // the word "Topic" pollutes the search and returns zero hits.
+                ?.replace(Regex("""(?i)\s*[-–]\s*topic\s*$"""), "")
+                ?.trim()
             val searchText = listOf(cleanTitle, cleanArtist)
                 .filter { !it.isNullOrBlank() }
                 .joinToString(" ")
@@ -60,24 +68,37 @@ object LyricsFetcher {
                 val arr = JSONArray(body)
                 var best: JSONObject? = null
                 var bestDiff = Double.MAX_VALUE
+                var bestPlain: JSONObject? = null
+                var bestPlainDiff = Double.MAX_VALUE
                 for (i in 0 until arr.length()) {
                     val item = arr.optJSONObject(i) ?: continue
                     if (item.optBoolean("instrumental")) continue
-                    val synced = item.optString("syncedLyrics")
-                    if (!isActuallySynced(synced)) continue
                     val itemDur = item.optDouble("duration", 0.0)
                     val diff = if (durationSec > 0.0 && itemDur > 0.0) {
                         Math.abs(itemDur - durationSec)
                     } else {
                         0.0
                     }
-                    if (diff < bestDiff) {
-                        bestDiff = diff
-                        best = item
+                    val synced = item.optString("syncedLyrics")
+                    if (isActuallySynced(synced)) {
+                        if (diff < bestDiff) {
+                            bestDiff = diff
+                            best = item
+                        }
+                    } else if (!item.optString("plainLyrics").isNullOrBlank()) {
+                        if (diff < bestPlainDiff) {
+                            bestPlainDiff = diff
+                            bestPlain = item
+                        }
                     }
                 }
                 val hit = best?.optString("syncedLyrics")
                 if (isActuallySynced(hit)) return hit
+                // No timed record exists on LRCLIB: still show the best matching
+                // plain lyrics when the app has Online Lyrics enabled — better
+                // than "No lyrics found" for songs LRCLIB only stores untimed.
+                val plain = bestPlain?.optString("plainLyrics")
+                if (!plain.isNullOrBlank()) return plain
             }
 
             // 2. Fall back to the exact-match endpoint (single record).
@@ -94,6 +115,8 @@ object LyricsFetcher {
                     val obj = JSONObject(body)
                     val synced = obj.optString("syncedLyrics")
                     if (isActuallySynced(synced)) return synced
+                    val plain = obj.optString("plainLyrics")
+                    if (!plain.isNullOrBlank()) return plain
                 }
             }
 
