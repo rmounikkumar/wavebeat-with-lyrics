@@ -344,11 +344,18 @@ private lateinit var btnLoudness: SwitchCompat
             selectedTab = it.getInt("selectedTab", 0)
         }
         val settings = MusicService.currentSettings()
-        is8D = settings["8d"] as? Boolean ?: false
-        is3D = (settings["virtualizer"] as? Int ?: 0) > 0
-        isBass = (settings["bass"] as? Int ?: 0) > 0
-        isReverb = settings["reverb"] as? Boolean ?: false
-        isLoud = settings["loudness"] as? Boolean ?: false
+        val saved = appPrefs
+        is8D = saved.getBoolean("8d", settings["8d"] as? Boolean ?: false)
+        is3D = saved.getInt("virtualizer", settings["virtualizer"] as? Int ?: 0) > 0
+        isBass = saved.getInt("bass", settings["bass"] as? Int ?: 0) > 0
+        isReverb = saved.getBoolean("reverb", settings["reverb"] as? Boolean ?: false)
+        isLoud = saved.getBoolean("loudness", settings["loudness"] as? Boolean ?: false)
+        // Keep MusicService's in-memory settings in sync with what we restored.
+        MusicService.set8D(is8D)
+        MusicService.setVirtualizerStrength(if (is3D) 750 else 0)
+        MusicService.setBassStrength(if (isBass) 700 else 0)
+        MusicService.setReverb(isReverb)
+        MusicService.setLoudness(isLoud)
     }
 
     private fun initViews() {

@@ -6,6 +6,7 @@ import android.app.NotificationManager
 import android.app.PendingIntent
 import android.content.Context
 import android.content.Intent
+import android.content.SharedPreferences
 import android.graphics.Bitmap
 import android.media.MediaMetadataRetriever
 import android.media.audiofx.BassBoost
@@ -130,7 +131,25 @@ class MusicService : MediaSessionService() {
 
         private var instance: MusicService? = null
 
+        @Volatile
+        private var appContext: Context? = null
+
+        fun attachAppContext(context: Context) {
+            appContext = context.applicationContext
+        }
+
+        private fun settingsPrefs(): SharedPreferences? =
+            instance?.prefs ?: appContext?.getSharedPreferences("wavebeat_state", Context.MODE_PRIVATE)
+
         fun instanceOrNull(): MusicService? = instance
+
+        fun loadPersistedSettings(sp: SharedPreferences) {
+            is8D = sp.getBoolean("8d", false)
+            bassStrength = sp.getInt("bass", 0)
+            virtStrength = sp.getInt("virtualizer", 0)
+            reverbEnabled = sp.getBoolean("reverb", false)
+            loudnessEnabled = sp.getBoolean("loudness", false)
+        }
 
         fun setEqualizerPreset(preset: String) {
             eqPreset = preset
@@ -144,6 +163,7 @@ class MusicService : MediaSessionService() {
 
         fun set8D(enabled: Boolean) {
             is8D = enabled
+            settingsPrefs()?.edit()?.putBoolean("8d", enabled)?.apply()
             instance?.let {
                 it.rotationProcessor?.enabled = enabled
                 it.applyEffects()
@@ -152,11 +172,13 @@ class MusicService : MediaSessionService() {
 
         fun setBassStrength(value: Int) {
             bassStrength = value.coerceIn(0, 1000)
+            settingsPrefs()?.edit()?.putInt("bass", bassStrength)?.apply()
             instance?.applyEffects()
         }
 
         fun setVirtualizerStrength(value: Int) {
             virtStrength = value.coerceIn(0, 1000)
+            settingsPrefs()?.edit()?.putInt("virtualizer", virtStrength)?.apply()
             instance?.let {
                 it.widenProcessor?.enabled = value > 0
                 it.widenProcessor?.width = 1f + (value / 1000f) * 1.4f
@@ -166,6 +188,7 @@ class MusicService : MediaSessionService() {
 
         fun setReverb(enabled: Boolean) {
             reverbEnabled = enabled
+            settingsPrefs()?.edit()?.putBoolean("reverb", enabled)?.apply()
             instance?.let {
                 it.reverbProcessor?.enabled = enabled
                 it.applyEffects()
@@ -174,6 +197,7 @@ class MusicService : MediaSessionService() {
 
         fun setLoudness(enabled: Boolean) {
             loudnessEnabled = enabled
+            settingsPrefs()?.edit()?.putBoolean("loudness", enabled)?.apply()
             instance?.applyEffects()
         }
 
@@ -199,6 +223,8 @@ class MusicService : MediaSessionService() {
     override fun onCreate() {
         super.onCreate()
         instance = this
+        attachAppContext(this)
+        loadPersistedSettings(prefs)
         autoNextEnabled = prefs.getBoolean("auto_next", true)
         hapticsEnabled = prefs.getBoolean("haptics", true)
         resumeEnabled = prefs.getBoolean("auto_resume", false)

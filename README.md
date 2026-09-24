@@ -42,6 +42,11 @@ Grab the latest APK from the [Releases](https://github.com/rmounikkumar/wavebeat
 
 > The APK is signed with the debug key, intended for personal/testing installs.
 
+## Changelog
+
+- **v1.0.1** — Fix: 8D / 3D / Bass / Reverb / Loudness effect settings now persist across restarts (previously they silently reset to OFF every launch). Rotational 8D pan and widened 3D soundstage verified with stereo output.
+- **v1.0.0** — Synced `.lrc` lyrics with a junk-safe sidecar picker, embedded fallback, plus the full player experience.
+
 ## Build
 
 ```bash
