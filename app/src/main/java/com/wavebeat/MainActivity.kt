@@ -2222,6 +2222,10 @@ applySelectedTab()
                 }
                 buildHomeGrid()
 
+                if (mediaController != null) {
+                    loadFullPlaylist()
+                }
+
                 if (::songListAdapter.isInitialized) {
                     songListAdapter.refresh()
                     favListAdapter.refresh()
@@ -2355,17 +2359,27 @@ applySelectedTab()
                 .build()
         }
 
-        val startIndex = currentSongIndex.coerceIn(0, songs.size - 1)
+        // The player queue must mirror the library list exactly. If it drifted
+        // (new downloads scanned in, renames, or a stale queue restored at
+        // startup), rebuild it before any seek so tapping a song plays THAT song.
+        val queueMatches = controller.mediaItemCount == songs.size &&
+                (0 until songs.size).all { i ->
+                    controller.getMediaItemAt(i).localConfiguration?.uri == songs[i].uri
+                }
 
-        if (controller.mediaItemCount == 0) {
-            controller.setMediaItems(mediaItems, startIndex, 0)
-            controller.prepare()
-        } else {
+        if (queueMatches) {
             currentSongIndex = controller.currentMediaItemIndex.coerceIn(0, songs.size - 1)
             runOnUiThread {
                 updateMiniPlayer()
                 refreshHomeCards()
             }
+        } else {
+            val currentUri = controller.getMediaItemAt(controller.currentMediaItemIndex)?.localConfiguration?.uri
+            val startIndex = songs.indexOfFirst { it.uri == currentUri }.coerceAtLeast(0)
+            val position = controller.currentPosition.coerceAtLeast(0L)
+            controller.setMediaItems(mediaItems, startIndex, position)
+            controller.prepare()
+            currentSongIndex = startIndex
         }
 
         applyRepeatMode()
@@ -2521,9 +2535,9 @@ applySelectedTab()
         hasPlayedThisSession = true
         pendingPlayRecommend = songs[index].id
 
-        if (controller.mediaItemCount != songs.size) {
-            loadFullPlaylist()
-        }
+        // Always re-sync before seeking: keeps the queue mirrored to the library
+        // (no-op when already in sync) so the index maps to the tapped song.
+        loadFullPlaylist()
 
         controller.seekToDefaultPosition(index)
         controller.play()
@@ -2574,6 +2588,7 @@ applySelectedTab()
             controller.play()
         } else {
             loadFullPlaylist()
+            controller?.seekToDefaultPosition(currentSongIndex)
             controller?.play()
         }
     }
@@ -2596,6 +2611,7 @@ applySelectedTab()
             controller.play()
         } else {
             loadFullPlaylist()
+            controller?.seekToDefaultPosition(currentSongIndex)
             controller?.play()
         }
     }

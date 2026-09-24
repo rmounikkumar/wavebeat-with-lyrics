@@ -44,6 +44,7 @@ Grab the latest APK from the [Releases](https://github.com/rmounikkumar/wavebeat
 
 ## Changelog
 
+- **v1.0.3** — Fix: playing a freshly downloaded MP3 no longer starts a different song. The player queue now stays in sync with the library — when new audio is scanned in (or the library changes), the queue is rebuilt to mirror the song list exactly (preserving the currently playing track), so tapping any song in the library (or the All songs list) plays exactly that song, and next/prev follow library order everywhere — including from the notification and Bluetooth controls.
 - **v1.0.2** — Fix: the media notification / shade card no longer disappears when you pause playback (paused with Bluetooth connected, the card now stays put and play resumes it smoothly). The service stays a foreground media service while a playlist is loaded, so the controls remain visible in the notification shade whether playing or paused.
 - **v1.0.1** — Fix: 8D / 3D / Bass / Reverb / Loudness effect settings now persist across restarts (previously they silently reset to OFF every launch). Rotational 8D pan and widened 3D soundstage verified with stereo output.
 - **v1.0.0** — Synced `.lrc` lyrics with a junk-safe sidecar picker, embedded fallback, plus the full player experience.
