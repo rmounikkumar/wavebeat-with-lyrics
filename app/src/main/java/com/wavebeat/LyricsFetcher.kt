@@ -19,7 +19,7 @@ import java.net.URLEncoder
  */
 object LyricsFetcher {
 
-    private const val USER_AGENT = "WaveBeat/1.0.7 (Android music player; personal use)"
+    private const val USER_AGENT = "WaveBeat/1.0.8 (Android music player; personal use)"
     private const val TIMEOUT_MS = 8000
 
     /**
@@ -62,43 +62,60 @@ object LyricsFetcher {
             val durationSec = if (durationMs > 0L) durationMs / 1000.0 else 0.0
 
             // 1. Search first — most reliable when the local metadata is messy.
-            val searchUrl = "https://lrclib.net/api/search?q=" +
-                    URLEncoder.encode(searchText, "UTF-8")
-            httpGet(searchUrl)?.let { body ->
-                val arr = JSONArray(body)
-                var best: JSONObject? = null
-                var bestDiff = Double.MAX_VALUE
-                var bestPlain: JSONObject? = null
-                var bestPlainDiff = Double.MAX_VALUE
-                for (i in 0 until arr.length()) {
-                    val item = arr.optJSONObject(i) ?: continue
-                    if (item.optBoolean("instrumental")) continue
-                    val itemDur = item.optDouble("duration", 0.0)
-                    val diff = if (durationSec > 0.0 && itemDur > 0.0) {
-                        Math.abs(itemDur - durationSec)
-                    } else {
-                        0.0
-                    }
-                    val synced = item.optString("syncedLyrics")
-                    if (isActuallySynced(synced)) {
-                        if (diff < bestDiff) {
-                            bestDiff = diff
-                            best = item
+            fun pickFromSearch(q: String): String? {
+                val url = "https://lrclib.net/api/search?q=" + URLEncoder.encode(q, "UTF-8")
+                return httpGet(url)?.let { body ->
+                    val arr = JSONArray(body)
+                    var best: JSONObject? = null
+                    var bestDiff = Double.MAX_VALUE
+                    var bestPlain: JSONObject? = null
+                    var bestPlainDiff = Double.MAX_VALUE
+                    for (i in 0 until arr.length()) {
+                        val item = arr.optJSONObject(i) ?: continue
+                        if (item.optBoolean("instrumental")) continue
+                        val itemDur = item.optDouble("duration", 0.0)
+                        val diff = if (durationSec > 0.0 && itemDur > 0.0) {
+                            Math.abs(itemDur - durationSec)
+                        } else {
+                            0.0
                         }
-                    } else if (!item.optString("plainLyrics").isNullOrBlank()) {
-                        if (diff < bestPlainDiff) {
-                            bestPlainDiff = diff
-                            bestPlain = item
+                        val synced = item.optString("syncedLyrics")
+                        if (isActuallySynced(synced)) {
+                            if (diff < bestDiff) {
+                                bestDiff = diff
+                                best = item
+                            }
+                        } else if (!item.optString("plainLyrics").isNullOrBlank()) {
+                            if (diff < bestPlainDiff) {
+                                bestPlainDiff = diff
+                                bestPlain = item
+                            }
                         }
                     }
+                    val hit = best?.optString("syncedLyrics")
+                    if (isActuallySynced(hit)) return hit
+                    // No timed record exists on LRCLIB: still show the best matching
+                    // plain lyrics when the app has Online Lyrics enabled — better
+                    // than "No lyrics found" for songs LRCLIB only stores untimed.
+                    val plain = bestPlain?.optString("plainLyrics")
+                    if (!plain.isNullOrBlank()) return plain
+                    null
                 }
-                val hit = best?.optString("syncedLyrics")
-                if (isActuallySynced(hit)) return hit
-                // No timed record exists on LRCLIB: still show the best matching
-                // plain lyrics when the app has Online Lyrics enabled — better
-                // than "No lyrics found" for songs LRCLIB only stores untimed.
-                val plain = bestPlain?.optString("plainLyrics")
-                if (!plain.isNullOrBlank()) return plain
+            }
+
+            pickFromSearch(searchText)?.let { return it }
+
+            // Some downloaded titles carry junk that makes the strict query come
+            // back empty (e.g. "My Stupid Heart (Ft. LAUV) - Walk off the Earth").
+            // Retry with a relaxed query: first " - " segment, no parenthesized
+            // text, no artist term — LRCLIB then finds the real track.
+            val relaxed = cleanTitle
+                .split(" - ").first()
+                .replace(Regex("""\s*\([^)]*\)\s*"""), " ")
+                .replace(Regex("""\s+"""), " ")
+                .trim(' ', '-', '_', '.')
+            if (relaxed.isNotBlank() && relaxed != searchText) {
+                pickFromSearch(relaxed)?.let { return it }
             }
 
             // 2. Fall back to the exact-match endpoint (single record).
