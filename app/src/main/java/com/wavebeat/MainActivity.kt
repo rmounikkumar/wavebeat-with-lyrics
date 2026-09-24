@@ -2392,7 +2392,12 @@ applySelectedTab()
                 refreshHomeCards()
             }
         } else {
-            val currentUri = controller.getMediaItemAt(controller.currentMediaItemIndex)?.localConfiguration?.uri
+            val currentIndex = controller.currentMediaItemIndex
+            val currentUri = if (currentIndex in 0 until controller.mediaItemCount) {
+                controller.getMediaItemAt(currentIndex).localConfiguration?.uri
+            } else {
+                null
+            }
             val startIndex = songs.indexOfFirst { it.uri == currentUri }.coerceAtLeast(0)
             val position = controller.currentPosition.coerceAtLeast(0L)
             controller.setMediaItems(mediaItems, startIndex, position)
