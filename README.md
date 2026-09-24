@@ -8,6 +8,12 @@ A lightweight, offline-first Android music player built with Kotlin and Media3 (
 |:---:|:---:|:---:|:---:|:---:|
 | ![Home](docs/screenshots/home_dance.png) | ![Songs](docs/screenshots/library_songs.png) | ![Player overlay](docs/screenshots/player_overlay.png) | ![Audio](docs/screenshots/audio.png) | ![Settings](docs/screenshots/settings.png) |
 
+Synced lyric highlight:
+
+![Synced lyrics](docs/screenshots/lyrics_1.jpeg)
+
+![Synced lyrics](docs/screenshots/lyrics_2.jpeg)
+
 ## Features
 
 - **Player overlay** — shuffle, prev/next, play/pause, repeat (off / one / all), tap + swipe seek bar
@@ -31,9 +37,9 @@ Full details in [FEATURES.md](FEATURES.md).
 
 ## Download
 
-Grab the latest APK from the [Releases](https://github.com/rmounikkumar/wavebeat/releases) page and install it on your device.
+Grab the latest APK from the [Releases](https://github.com/rmounikkumar/wavebeat-with-lyrics/releases) page and install it on your device.
 
-> The debug APK is signed with the debug key, intended for personal/testing installs.
+> The APK is signed with the debug key, intended for personal/testing installs.
 
 ## Build
 
