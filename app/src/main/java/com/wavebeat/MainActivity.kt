@@ -215,6 +215,7 @@ private lateinit var btnLoudness: SwitchCompat
     private lateinit var hapticSwitch: SwitchCompat
     private lateinit var navHapticSwitch: SwitchCompat
     private lateinit var keepAwakeSwitch: SwitchCompat
+    private lateinit var lyricsOnlineSwitch: SwitchCompat
     private lateinit var topBar: LinearLayout
     private lateinit var topBarTitle: TextView
     private lateinit var searchIcon: ImageButton
@@ -504,6 +505,13 @@ applySelectedTab()
         }
         applyKeepScreenOn(tweakPrefs.getBoolean("keep_screen_on", true))
 
+        lyricsOnlineSwitch = findViewById(R.id.lyricsOnlineSwitch)
+        lyricsOnlineSwitch.isChecked = tweakPrefs.getBoolean("lyrics_online", true)
+        lyricsOnlineSwitch.setOnCheckedChangeListener { sw, checked ->
+            if (sw.isPressed) tapHaptic()
+            tweakPrefs.edit().putBoolean("lyrics_online", checked).apply()
+        }
+
         searchIcon.setOnClickListener { openSearch() }
         searchClear.setOnClickListener {
             if (searchField.text.isNullOrBlank()) {
@@ -724,8 +732,10 @@ applySelectedTab()
         lyricsHandler.removeCallbacks(lyricsSyncRunnable)
 
         Thread {
-            var text = lyricsCache[song.id]
-            var lrcLines = lrcCache[song.id]
+            val onlineLyrics = getSharedPreferences("wavebeat_state", MODE_PRIVATE)
+                .getBoolean("lyrics_online", true)
+            var text = if (onlineLyrics) lyricsCache[song.id] else null
+            var lrcLines = if (onlineLyrics) lrcCache[song.id] else null
 
             if (text == null || lrcLines == null) {
                 text = null
@@ -755,10 +765,10 @@ applySelectedTab()
                     }
                 }
 
-                // 3. Last fallback: fetch synchronized lyrics from LRCLIB (online).
-                //    Only reached when there is no sibling .lrc file and no
-                //    embedded lyrics — existing behavior is otherwise untouched.
-                if (text == null) {
+                // 3. Last fallback: fetch synchronized lyrics from LRCLIB (online),
+                //    only when enabled in Settings -> Online Lyrics. Local .lrc
+                //    files and embedded lyrics always keep priority.
+                if (text == null && onlineLyrics) {
                     val onlineLrc = LyricsFetcher.resolveSongLyrics(song.title, song.artist, song.duration)
                     if (!onlineLrc.isNullOrBlank()) {
                         text = onlineLrc

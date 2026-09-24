@@ -19,8 +19,21 @@ import java.net.URLEncoder
  */
 object LyricsFetcher {
 
-    private const val USER_AGENT = "WaveBeat/1.0.4 (Android music player; personal use)"
+    private const val USER_AGENT = "WaveBeat/1.0.6 (Android music player; personal use)"
     private const val TIMEOUT_MS = 8000
+
+    /**
+     * True when the text actually contains at least one timed line
+     * ("[mm:ss.xx] ..."). LRCLIB sometimes stores plain, untimed text in
+     * the syncedLyrics field; those records would be shown unsynchronized,
+     * so they are treated as "no synced lyrics available".
+     */
+    private val timedLineRegex = Regex("""\[\d{1,2}:\d{2}([.:]\d{1,3})?\]""")
+
+    private fun isActuallySynced(text: String?): Boolean {
+        if (text.isNullOrBlank()) return false
+        return timedLineRegex.containsMatchIn(text)
+    }
 
     /**
      * Returns synced LRC text for the given song, or null when unavailable.
@@ -51,7 +64,7 @@ object LyricsFetcher {
                     val item = arr.optJSONObject(i) ?: continue
                     if (item.optBoolean("instrumental")) continue
                     val synced = item.optString("syncedLyrics")
-                    if (synced.isBlank()) continue
+                    if (!isActuallySynced(synced)) continue
                     val itemDur = item.optDouble("duration", 0.0)
                     val diff = if (durationSec > 0.0 && itemDur > 0.0) {
                         Math.abs(itemDur - durationSec)
@@ -64,7 +77,7 @@ object LyricsFetcher {
                     }
                 }
                 val hit = best?.optString("syncedLyrics")
-                if (!hit.isNullOrBlank()) return hit
+                if (isActuallySynced(hit)) return hit
             }
 
             // 2. Fall back to the exact-match endpoint (single record).
@@ -80,7 +93,7 @@ object LyricsFetcher {
                 httpGet(getUrl)?.let { body ->
                     val obj = JSONObject(body)
                     val synced = obj.optString("syncedLyrics")
-                    if (synced.isNotBlank()) return synced
+                    if (isActuallySynced(synced)) return synced
                 }
             }
 
