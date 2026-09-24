@@ -1112,6 +1112,34 @@ applySelectedTab()
         miniPlay.setImageResource(if (playing) R.drawable.ic_spotify_pause else R.drawable.ic_spotify_play)
     }
 
+    /**
+     * Re-paints the player UI from the connected session's real state.
+     * Player listener events only fire on *changes*, so when the app is
+     * reopened over an already-running session (cold start after minimizing
+     * or after the process was recreated) the header, mini bar and play
+     * button could otherwise stay stale — e.g. showing the previous song
+     * or a pause icon while audio actually plays. This re-reads the
+     * controller and repaints everything without touching playback.
+     */
+    private fun syncUiWithSession() {
+        val controller = mediaController ?: return
+        if (songs.isEmpty()) return
+        if (controller.mediaItemCount == 0) return
+        // Guarantee the queue mirrors the library, then use the session index.
+        loadFullPlaylist()
+        val song = songs.getOrNull(currentSongIndex.coerceIn(0, songs.size - 1)) ?: return
+        songTitle.text = song.title
+        songArtist.text = song.artist
+        if (::miniTitle.isInitialized) {
+            miniTitle.text = song.title
+            miniArtist.text = song.artist
+        }
+        updateMiniPlayer()
+        refreshHomeCards()
+        updatePlayButton(controller.isPlaying, animate = false)
+        syncLogoDance(controller.isPlaying)
+    }
+
     private fun applySelectedTab() {
         bottomNav.selectedItemId = when (selectedTab) {
             1 -> R.id.nav_songs
@@ -2066,6 +2094,7 @@ applySelectedTab()
                     if (mediaController != null) {
                         loadFullPlaylist()
                     }
+                    syncUiWithSession()
                 } else {
                     songTitle.text = "No songs found"
                     songArtist.text = "Add music to your device"
@@ -2302,6 +2331,7 @@ applySelectedTab()
                         loadFullPlaylist()
                     }
                     processPendingOpen()
+                    syncUiWithSession()
 
                     MusicService.onSongChanged = { title, artist ->
                         runOnUiThread {
@@ -2427,9 +2457,13 @@ applySelectedTab()
         }
     }
 
-    private fun updatePlayButton(isPlaying: Boolean) {
+    private fun updatePlayButton(isPlaying: Boolean, animate: Boolean = true) {
         val newIcon = if (isPlaying) R.drawable.ic_spotify_pause else R.drawable.ic_spotify_play
         if (::miniPlay.isInitialized) miniPlay.setImageResource(newIcon)
+        if (!animate) {
+            playBtn.setImageResource(newIcon)
+            return
+        }
         playBtn.animate()
             .alpha(0f)
             .setDuration(120)
@@ -2694,6 +2728,7 @@ applySelectedTab()
             handler.removeCallbacksAndMessages(null)
         }
         startSeekBarUpdate()
+        syncUiWithSession()
     }
 
     override fun onPause() {

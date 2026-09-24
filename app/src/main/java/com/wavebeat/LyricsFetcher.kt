@@ -19,7 +19,7 @@ import java.net.URLEncoder
  */
 object LyricsFetcher {
 
-    private const val USER_AGENT = "WaveBeat/1.0.8 (Android music player; personal use)"
+    private const val USER_AGENT = "WaveBeat/1.0.9 (Android music player; personal use)"
     private const val TIMEOUT_MS = 8000
 
     /**
