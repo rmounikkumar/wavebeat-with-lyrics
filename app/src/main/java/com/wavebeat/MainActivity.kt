@@ -203,6 +203,8 @@ class MainActivity : AppCompatActivity() {
     // Home grid "recently added first" order (MediaStore DATE_ADDED, separate from the library order)
     private val songDateAdded = HashMap<Long, Long>()
     private val pendingOnlineArt = mutableSetOf<Long>()
+    // Long-press song menu: "Play next" FIFO (played right after the current song ends)
+    private val playNextQueue = ArrayDeque<Long>()
 
     private var libSub = 0
     private var currentPlaylistName: String? = null
@@ -1447,7 +1449,7 @@ applySelectedTab()
         private fun onRowLongClick(position: Int): Boolean {
             return when (mode) {
                 MODE_SONGS -> {
-                    if (position in filtered.indices) addSongToPlaylist(filtered[position])
+                    if (position in filtered.indices) showSongMenu(filtered[position])
                     true
                 }
                 MODE_PLAYLIST_DETAIL -> {
@@ -1861,6 +1863,78 @@ applySelectedTab()
                 }
             }
             .show()
+    }
+
+    // Long-press on a song in the library: quick actions menu.
+    private fun showSongMenu(song: Song) {
+        val isFav = song.id in favoriteIds
+        val items = arrayOf(
+            "Play next",
+            "Add to playlist",
+            if (isFav) "Remove from Favorites" else "Add to Favorites",
+            "Delete"
+        )
+        runCatching {
+            AlertDialog.Builder(this)
+                .setTitle(song.title)
+                .setItems(items) { _, which ->
+                    when (which) {
+                        0 -> queuePlayNext(song)
+                        1 -> addSongToPlaylist(song)
+                        2 -> {
+                            toggleFavorite(song.id)
+                            Toast.makeText(
+                                this,
+                                if (song.id in favoriteIds) "Added to Favorites" else "Removed from Favorites",
+                                Toast.LENGTH_SHORT
+                            ).show()
+                        }
+                        3 -> confirmDeleteSong(song)
+                    }
+                }
+                .show()
+        }
+    }
+
+    // "Play next": the song is queued (FIFO) and plays right after the current one ends.
+    private fun queuePlayNext(song: Song) {
+        playNextQueue.add(song.id)
+        val msg = if (playNextQueue.size == 1) {
+            "\"${song.title}\" will play next"
+        } else {
+            "\"${song.title}\" queued (${playNextQueue.size} up next)"
+        }
+        Toast.makeText(this, msg, Toast.LENGTH_SHORT).show()
+    }
+
+    // Delete the actual file, after the user confirms in our dialog + (on Android 11+)
+    // the system delete screen. Never destructive without both confirmations.
+    private fun confirmDeleteSong(song: Song) {
+        AlertDialog.Builder(this)
+            .setTitle("Delete \"${song.title}\"?")
+            .setMessage("This permanently deletes the song file from your phone.")
+            .setPositiveButton("Delete") { _, _ ->
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+                    // The OS shows its own "Allow this app to delete this item?" screen;
+                    // if approved, the file is removed and the library auto-refreshes.
+                    runCatching {
+                        MediaStore.createDeleteRequest(contentResolver, arrayListOf(song.uri)).send()
+                    }.onFailure { fallbackDelete(song) }
+                } else {
+                    fallbackDelete(song)
+                }
+            }
+            .setNegativeButton("Cancel", null)
+            .show()
+    }
+
+    private fun fallbackDelete(song: Song) {
+        try {
+            contentResolver.delete(song.uri, null, null)
+            Toast.makeText(this, "Song deleted", Toast.LENGTH_SHORT).show()
+        } catch (_: Exception) {
+            Toast.makeText(this, "Couldn't delete this song", Toast.LENGTH_SHORT).show()
+        }
     }
 
     private fun createPlaylistDialog(initial: Song?) {
@@ -2537,6 +2611,16 @@ applySelectedTab()
             }
 
             override fun onMediaItemTransition(mediaItem: MediaItem?, reason: Int) {
+                // "Play next" songs queued by long-press menu: on natural auto-advance,
+                // jump to the queued song instead of the library's next one.
+                if (reason == Player.MEDIA_ITEM_TRANSITION_REASON_AUTO && playNextQueue.isNotEmpty()) {
+                    val qid = playNextQueue.removeFirst()
+                    val qIndex = songs.indexOfFirst { it.id == qid }
+                    if (qIndex >= 0) {
+                        playSong(qIndex)
+                        return
+                    }
+                }
                 val index = mediaController?.currentMediaItemIndex ?: 0
                 if (index in songs.indices) {
                     val requested = pendingPlayRecommend
@@ -2798,6 +2882,15 @@ applySelectedTab()
 
     private fun nextSong() {
         if (songs.isEmpty()) return
+        // A long-press "Play next" song takes priority over the library's next song.
+        if (playNextQueue.isNotEmpty()) {
+            val qid = playNextQueue.removeFirst()
+            val qIndex = songs.indexOfFirst { it.id == qid }
+            if (qIndex >= 0) {
+                playSong(qIndex)
+                return
+            }
+        }
         val controller = mediaController
         MusicService.markNextIntent()
 
