@@ -169,7 +169,7 @@ class MainActivity : AppCompatActivity() {
     private lateinit var playerOverlayClose: ImageButton
     private val homeCards = mutableMapOf<Int, HomeCard>()
 
-    private class HomeCard(val root: LinearLayout, val title: TextView, val artist: TextView, val scrim: View, val art: ImageView)
+    private class HomeCard(val root: LinearLayout, val title: TextView, val artist: TextView, val scrim: View)
     private lateinit var lyricsBtn: TextView
     private lateinit var lyricsPanelTitle: TextView
     private lateinit var lyricsText: TextView
@@ -192,7 +192,7 @@ class MainActivity : AppCompatActivity() {
     private lateinit var favListAdapter: SongAdapter
     private lateinit var playlistAdapter: PlaylistAdapter
     private lateinit var detailAdapter: SongAdapter
-    // Album art loading (mini-player + home cards)
+    // Album art loading (mini-player only)
     private val artCache = mutableMapOf<Long, Bitmap>()
     private val artLoader = Executors.newSingleThreadExecutor()
     private val uiHandler = Handler(Looper.getMainLooper())
@@ -1036,11 +1036,6 @@ applySelectedTab()
             }
             artZone.addView(artBack, FrameLayout.LayoutParams(
                 FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT))
-            val homeArt = ImageView(this).apply {
-                scaleType = ImageView.ScaleType.CENTER_CROP
-            }
-            artZone.addView(homeArt, FrameLayout.LayoutParams(
-                FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT))
             val logoDisc = View(this).apply {
                 background = GradientDrawable().apply {
                     shape = GradientDrawable.OVAL
@@ -1093,9 +1088,7 @@ applySelectedTab()
             root.layoutParams = lp
             root.setOnClickListener { playHomeCard(index) }
             homeGrid.addView(root)
-            val card = HomeCard(root, title, artist, scrim, homeArt)
-            homeCards[index] = card
-            loadHomeArt(index, card, song)
+            homeCards[index] = HomeCard(root, title, artist, scrim)
         }
     }
 
@@ -1147,24 +1140,6 @@ applySelectedTab()
                 if (miniArtLoadedId == song.id && bmp != null) {
                     android.util.Log.i("WaveBeatArt", "mini art loaded id=${song.id} ${bmp.width}x${bmp.height}")
                     miniArt.setImageBitmap(bmp)
-                }
-            }
-        }
-    }
-
-    private fun loadHomeArt(index: Int, card: HomeCard, song: Song) {
-        val cached = artCache[song.id]
-        if (cached != null) {
-            card.art.setImageBitmap(cached)
-            return
-        }
-        artLoader.execute {
-            val bmp = loadAlbumArtBitmap(song.uri)
-            if (bmp != null) artCache[song.id] = bmp
-            uiHandler.post {
-                if (bmp != null && homeCards[index] === card) {
-                    android.util.Log.i("WaveBeatArt", "home art loaded id=${song.id} idx=${index} ${bmp.width}x${bmp.height}")
-                    card.art.setImageBitmap(bmp)
                 }
             }
         }
