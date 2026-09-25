@@ -21,6 +21,9 @@ import android.util.AttributeSet
 import android.util.Size
 import android.media.MediaMetadataRetriever
 import java.io.FileInputStream
+import java.net.HttpURLConnection
+import java.net.URL
+import java.net.URLEncoder
 import android.net.Uri
 import android.os.Build
 import android.os.Bundle
@@ -169,7 +172,7 @@ class MainActivity : AppCompatActivity() {
     private lateinit var playerOverlayClose: ImageButton
     private val homeCards = mutableMapOf<Int, HomeCard>()
 
-    private class HomeCard(val root: LinearLayout, val title: TextView, val artist: TextView, val scrim: View, val art: ImageView)
+    private class HomeCard(val root: LinearLayout, val title: TextView, val artist: TextView, val scrim: View, val art: ImageView, val song: Song)
     private lateinit var lyricsBtn: TextView
     private lateinit var lyricsPanelTitle: TextView
     private lateinit var lyricsText: TextView
@@ -195,7 +198,11 @@ class MainActivity : AppCompatActivity() {
     // Album art loading (home cards)
     private val artCache = mutableMapOf<Long, Bitmap>()
     private val artLoader = Executors.newSingleThreadExecutor()
+    private val onlineArtLoader = Executors.newSingleThreadExecutor()
     private val uiHandler = Handler(Looper.getMainLooper())
+    // Home grid "recently added first" order (MediaStore DATE_ADDED, separate from the library order)
+    private val songDateAdded = HashMap<Long, Long>()
+    private val pendingOnlineArt = mutableSetOf<Long>()
 
     private var libSub = 0
     private var currentPlaylistName: String? = null
@@ -1003,7 +1010,6 @@ applySelectedTab()
         if (!::homeGrid.isInitialized) return
         homeGrid.removeAllViews()
         homeCards.clear()
-        artCache.clear()
         if (songs.isEmpty()) return
         val density = resources.displayMetrics.density
         val cardSize = (resources.displayMetrics.widthPixels - (48 * density).toInt()) / 2
@@ -1017,7 +1023,8 @@ applySelectedTab()
             intArrayOf(Color.rgb(15, 118, 110), Color.rgb(4, 47, 46)),     // deep sea
             intArrayOf(Color.rgb(21, 105, 99), Color.rgb(9, 63, 44))       // pine
         )
-        songs.forEachIndexed { index, song ->
+        val orderedSongs = songs.sortedByDescending { songDateAdded[it.id] ?: 0L }
+        orderedSongs.forEachIndexed { index, song ->
             val root = LinearLayout(this).apply {
                 orientation = LinearLayout.VERTICAL
                 isClickable = true
@@ -1092,7 +1099,7 @@ applySelectedTab()
             root.layoutParams = lp
             root.setOnClickListener { playHomeCard(index) }
             homeGrid.addView(root)
-            val card = HomeCard(root, title, artist, scrim, homeArt)
+            val card = HomeCard(root, title, artist, scrim, homeArt, song)
             homeCards[index] = card
             loadHomeArt(index, card, song)
         }
@@ -1100,9 +1107,9 @@ applySelectedTab()
 
     private fun refreshHomeCards() {
         if (homeCards.isEmpty()) return
-        songs.forEachIndexed { index, _ ->
-            val card = homeCards[index] ?: return@forEachIndexed
-            val isCurrent = index == currentSongIndex
+        val currentId = songs.getOrNull(currentSongIndex.coerceIn(0, songs.size - 1))?.id ?: -1L
+        homeCards.values.forEach { card ->
+            val isCurrent = card.song.id == currentId
             card.artist.setTextColor(if (isCurrent) Color.rgb(29, 185, 84) else Color.rgb(179, 179, 183))
             card.scrim.visibility = if (isCurrent) View.VISIBLE else View.GONE
             card.root.background = getDrawable(R.drawable.home_card)?.mutate()
@@ -1110,10 +1117,13 @@ applySelectedTab()
     }
 
     private fun playHomeCard(index: Int) {
-        currentSongIndex = index
+        val card = homeCards[index] ?: return
+        val realIndex = songs.indexOfFirst { it.id == card.song.id }
+        if (realIndex < 0) return
+        currentSongIndex = realIndex
         refreshHomeCards()
         updateMiniPlayer()
-        playSong(index)
+        playSong(realIndex)
     }
 
     private fun updateMiniPlayer() {
@@ -1134,13 +1144,30 @@ applySelectedTab()
             card.art.setImageBitmap(cached)
             return
         }
+        val wantOnline = !pendingOnlineArt.contains(song.id)
+        if (wantOnline) pendingOnlineArt.add(song.id)
         artLoader.execute {
             val bmp = loadAlbumArtBitmap(song.uri)
-            if (bmp != null) artCache[song.id] = bmp
-            uiHandler.post {
-                if (bmp != null && homeCards[index] === card) {
-                    android.util.Log.i("WaveBeatArt", "home art loaded id=${song.id} idx=${index} ${bmp.width}x${bmp.height}")
-                    card.art.setImageBitmap(bmp)
+            if (bmp != null) {
+                artCache[song.id] = bmp
+                uiHandler.post {
+                    if (homeCards[index] === card) {
+                        android.util.Log.i("WaveBeatArt", "home art loaded id=${song.id} idx=${index} ${bmp.width}x${bmp.height}")
+                        card.art.setImageBitmap(bmp)
+                    }
+                }
+            } else if (wantOnline) {
+                onlineArtLoader.execute {
+                    val obmp = fetchOnlineAlbumArt(song)
+                    if (obmp != null) {
+                        artCache[song.id] = obmp
+                        android.util.Log.i("WaveBeatArt", "online found id=${song.id} ${obmp.width}x${obmp.height}")
+                    }
+                    uiHandler.post {
+                        if (obmp != null && homeCards[index] === card) {
+                            card.art.setImageBitmap(obmp)
+                        }
+                    }
                 }
             }
         }
@@ -1172,6 +1199,80 @@ applySelectedTab()
                 }
             }
         } catch (_: Exception) { null }
+    }
+
+    // iTunes Search API (free, no key): find a cover for songs that have no local album art.
+    // Never throws back to the caller; returns null when nothing is found so the card
+    // keeps its original gradient/logo look. Tries a few search terms (title+artist,
+    // then title alone, then a cleaned title) because YouTube-download filenames often
+    // carry junk like "(Lyrics) 8D - Audio (320 kbps)" that would fail a raw query.
+    private fun fetchOnlineAlbumArt(song: Song): Bitmap? {
+        val terms = buildSearchTerms(song)
+        for (term in terms) {
+            val bmp = searchItunes(term, song)
+            if (bmp != null) return bmp
+        }
+        if (terms.isNotEmpty()) {
+            android.util.Log.i("WaveBeatArt", "online null id=${song.id} all ${terms.size} terms missed")
+        }
+        return null
+    }
+
+    private fun searchItunes(rawTerm: String, song: Song): Bitmap? {
+        return try {
+            val term = URLEncoder.encode(rawTerm, "UTF-8")
+            val search = URL("https://itunes.apple.com/search?term=$term&media=music&entity=song&limit=1")
+            val conn = search.openConnection() as HttpURLConnection
+            conn.connectTimeout = 6000
+            conn.readTimeout = 6000
+            conn.setRequestProperty("User-Agent", "WaveBeat/1.0.14")
+            conn.connect()
+            if (conn.responseCode != 200) {
+                android.util.Log.i("WaveBeatArt", "online null id=${song.id} http=${conn.responseCode}")
+                return null
+            }
+            val json = JSONObject(conn.inputStream.bufferedReader().use { it.readText() })
+            val results = json.optJSONArray("results") ?: return null
+            if (results.length() == 0) return null
+            val artUrl0 = results.getJSONObject(0).optString("artworkUrl100")
+            if (artUrl0.isEmpty()) return null
+            val artUrl = artUrl0.replace("100x100", "600x600")
+            val imgConn = URL(artUrl).openConnection() as HttpURLConnection
+            imgConn.connectTimeout = 6000
+            imgConn.readTimeout = 6000
+            imgConn.setRequestProperty("User-Agent", "WaveBeat/1.0.14")
+            imgConn.connect()
+            if (imgConn.responseCode != 200) return null
+            val bytes = imgConn.inputStream.use { it.readBytes() }
+            BitmapFactory.decodeByteArray(bytes, 0, bytes.size)
+        } catch (e: Exception) {
+            android.util.Log.i("WaveBeatArt", "no online art id=${song.id} (${e.javaClass.simpleName})")
+            null
+        }
+    }
+
+    // Order matters: most specific first. Each candidate is tried until one returns art.
+    private fun buildSearchTerms(song: Song): List<String> {
+        val title = song.title.trim()
+        val artist = song.artist.trim()
+        val terms = mutableListOf<String>()
+        if (title.isNotEmpty() && artist.isNotEmpty()) terms.add("$title $artist")
+        if (title.isNotEmpty()) terms.add(title)
+        val cleaned = cleanSearchTitle(title)
+        if (cleaned.isNotEmpty() && cleaned != title) terms.add(cleaned)
+        return terms
+    }
+
+    private fun cleanSearchTitle(raw: String): String {
+        var t = raw
+        t = t.replace(Regex("\\([^)]*\\)"), " ")
+        t = t.replace(Regex("\\[[^]]*\\]"), " ")
+        t = t.replace(
+            Regex("(?i)\\b(lyrics?|official\\s*(music\\s*)?video|official\\s*audio|8d|4k|hd|topic|kbps|feat[\\s\\S]*)$"),
+            " "
+        )
+        t = t.replace(Regex("[\\s\\-_]+"), " ").trim()
+        return t
     }
 
     /**
@@ -2236,7 +2337,8 @@ applySelectedTab()
             MediaStore.Audio.Media._ID,
             MediaStore.Audio.Media.TITLE,
             MediaStore.Audio.Media.ARTIST,
-            MediaStore.Audio.Media.DURATION
+            MediaStore.Audio.Media.DURATION,
+            MediaStore.Audio.Media.DATE_ADDED
         )
 
         val selection = "${MediaStore.Audio.Media.IS_MUSIC} != 0"
@@ -2247,6 +2349,7 @@ applySelectedTab()
             val titleCol = cursor.getColumnIndexOrThrow(MediaStore.Audio.Media.TITLE)
             val artistCol = cursor.getColumnIndexOrThrow(MediaStore.Audio.Media.ARTIST)
             val durationCol = cursor.getColumnIndexOrThrow(MediaStore.Audio.Media.DURATION)
+            val dateCol = cursor.getColumnIndexOrThrow(MediaStore.Audio.Media.DATE_ADDED)
 
             while (cursor.moveToNext()) {
                 val id = cursor.getLong(idCol)
@@ -2255,6 +2358,7 @@ applySelectedTab()
                 val duration = cursor.getLong(durationCol)
                 if (duration > 0) {
                     val uri = ContentUris.withAppendedId(MediaStore.Audio.Media.EXTERNAL_CONTENT_URI, id)
+                    songDateAdded[id] = cursor.getLong(dateCol)
                     loadedSongs.add(Song(id, title, artist, uri, duration))
                 }
             }
@@ -2804,6 +2908,7 @@ applySelectedTab()
         stopSeekBarUpdate()
         lyricsHandler.removeCallbacks(lyricsSyncRunnable)
         artLoader.shutdown()
+        onlineArtLoader.shutdown()
         MusicService.onSleepTimerUpdated = null
         MusicService.onPlaybackError = null
         mediaController = null
